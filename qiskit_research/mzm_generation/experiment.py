@@ -134,6 +134,7 @@ class KitaevHamiltonianExperiment(BaseExperiment):
                 if "_minus_" in label and _all_real_rz_gates(base_circuit, atol=1e-6):
                     continue
                 for dd_sequence in dd_sequences:
+                    print(dd_sequence)
                     for pauli_twirl_index in range(
                         max(1, self.params.num_twirled_circuits)
                     ):
