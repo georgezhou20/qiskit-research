@@ -92,7 +92,6 @@ class KitaevHamiltonianExperiment(BaseExperiment):
         params: KitaevHamiltonianExperimentParameters,
         provider: Optional[Provider] = None,
     ) -> None:
-        print('Hi')
         self.params = params
         self.rng = np.random.default_rng(params.seed)
         backend = get_backend(params.backend_name, provider, seed_simulator=params.seed)
@@ -134,7 +133,6 @@ class KitaevHamiltonianExperiment(BaseExperiment):
                 if "_minus_" in label and _all_real_rz_gates(base_circuit, atol=1e-6):
                     continue
                 for dd_sequence in dd_sequences:
-                    print(dd_sequence)
                     for pauli_twirl_index in range(
                         max(1, self.params.num_twirled_circuits)
                     ):
