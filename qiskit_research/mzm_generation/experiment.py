@@ -92,6 +92,7 @@ class KitaevHamiltonianExperiment(BaseExperiment):
         params: KitaevHamiltonianExperimentParameters,
         provider: Optional[Provider] = None,
     ) -> None:
+        print('Hi')
         self.params = params
         self.rng = np.random.default_rng(params.seed)
         backend = get_backend(params.backend_name, provider, seed_simulator=params.seed)
