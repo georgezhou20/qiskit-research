@@ -30,12 +30,17 @@ from qiskit.transpiler.passes import (
     ALAPScheduleAnalysis,
     PadDelay,
     ConstrainedReschedule,
+    
+    # CombineAdjacentDelays,
+    # DynamicalDecoupling,
+    # DynamicalDecouplingMulti,
 )
-from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
+# from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
 from qiskit_research.utils.gates import XmGate, XpGate, YmGate, YpGate
+# from qiskit_research.utils.combine_adjacent_delays import CombineAdjacentDelays
+# from qiskit_research.utils.dynamical_decoupling_new import DynamicalDecoupling
 
-from qiskit_research.utils.combine_adjacent_delays import CombineAdjacentDelays
-from qiskit_research.utils.dynamical_decoupling_new import DynamicalDecoupling
+
 
 
 import numpy as np
