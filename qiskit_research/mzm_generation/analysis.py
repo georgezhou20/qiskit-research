@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import itertools
+from operator import concat
 import os
 from collections import defaultdict
 from typing import Iterable, Optional, Sequence, Union
@@ -71,9 +72,12 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 permutation,
                 measurement_label,
                 dynamical_decoupling_sequence,
-            ) = result["metadata"]["params"][:7]
-            if len(result["metadata"]["params"]) == 8:
-                pauli_twirl_index = result["metadata"]["params"][7]
+                num_dd_passes,
+                uhrig_spacing,
+                concat_layers,
+            ) = result["metadata"]["params"][:10]
+            if len(result["metadata"]["params"]) == 11:
+                pauli_twirl_index = result["metadata"]["params"][10]
             else:
                 pauli_twirl_index = None
             circuit_params = CircuitParameters(
@@ -86,6 +90,9 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 permutation=tuple(permutation),
                 measurement_label=measurement_label,
                 dynamical_decoupling_sequence=dynamical_decoupling_sequence,
+                num_dd_passes=num_dd_passes,
+                uhrig_spacing=uhrig_spacing,
+                concat_layers=concat_layers,
                 pauli_twirl_index=pauli_twirl_index,
             )
             data[circuit_params] = result
@@ -116,8 +123,29 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         tunneling = -1.0
         superconducting = 1.0
 
+        # diagonalized_bogoliubov_transform = dict()
+        # for chemical_potential in params.chemical_potential_values:
+        #     (transformation_matrix, orbital_energies, constant) = diagonalizing_bogoliubov_transform(
+        #         params.n_modes,
+        #         tunneling=tunneling,
+        #         superconducting=superconducting,
+        #         chemical_potential=chemical_potential,
+        #     )
+
+        #     W1 = transformation_matrix[:, : params.n_modes]
+        #     W2 = transformation_matrix[:, params.n_modes :]
+        #     full_transformation_matrix = np.block([[W1, W2], [W2.conj(), W1.conj()]])
+        #     hamiltonian_parity = np.sign(
+        #         np.real(np.linalg.det(full_transformation_matrix))
+        #     )
+
+            # db_transform = {'transformation_matrix' : transformation_matrix,
+            #                  'orbital_energies' : orbital_energies,
+            #                  'constant' : constant }
+            # diagonalized_bogoliubov_transform[chemical_potential] = db_transform
+
         # get simulation results
-        yield from self._compute_simulation_results(tunneling, superconducting, params)
+        # yield from self._compute_simulation_results(tunneling, superconducting, params)
 
         # create data storage objects
         corr_matrices: dict[
@@ -136,14 +164,16 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
 
         # calculate results
         dd_sequences = params.dynamical_decoupling_sequences or [None]
+        chemical_potential_data = dict()
         for chemical_potential in params.chemical_potential_values:
             # diagonalize
-            (transformation_matrix, _, _,) = diagonalizing_bogoliubov_transform(
+            (transformation_matrix, orbital_energies, constant) = diagonalizing_bogoliubov_transform(
                 params.n_modes,
                 tunneling=tunneling,
                 superconducting=superconducting,
                 chemical_potential=chemical_potential,
             )
+            
             # compute parity
             W1 = transformation_matrix[:, : params.n_modes]
             W2 = transformation_matrix[:, params.n_modes :]
@@ -151,9 +181,21 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             hamiltonian_parity = np.sign(
                 np.real(np.linalg.det(full_transformation_matrix))
             )
+            
+            exact_parity = dict()
+            corr_exact = dict()
             # compute quasis and correlation matrices
             for occupied_orbitals in params.occupied_orbitals_list:
-                exact_parity = (-1) ** len(occupied_orbitals) * hamiltonian_parity
+                exact_parity[occupied_orbitals] = (-1) ** len(occupied_orbitals) * hamiltonian_parity
+                occupation = np.zeros(params.n_modes)
+                occupation[list(occupied_orbitals)] = 1.0
+                corr_diag = np.diag(np.concatenate([occupation, 1 - occupation]))
+                corr_exact[occupied_orbitals] = (
+                    full_transformation_matrix.T.conj()
+                    @ corr_diag
+                    @ full_transformation_matrix
+                )
+
                 for dd_sequence in dd_sequences:
                     quasis_raw = (
                         {}
@@ -174,6 +216,9 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                             permutation,
                             label,
                             dynamical_decoupling_sequence=dd_sequence,
+                            num_dd_passes=params.num_dd_passes,
+                            uhrig_spacing=params.uhrig_spacing,
+                            concat_layers=params.concat_layers,
                             pauli_twirl_index=0
                             if params.num_twirled_circuits
                             else None,
@@ -191,6 +236,9 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                                     permutation,
                                     label,
                                     dynamical_decoupling_sequence=dd_sequence,
+                                    num_dd_passes=params.num_dd_passes,
+                                    uhrig_spacing=params.uhrig_spacing,
+                                    concat_layers=params.concat_layers,
                                     pauli_twirl_index=pauli_twirl_index
                                     if params.num_twirled_circuits
                                     else None,
@@ -214,7 +262,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                                 quasis_mem[permutation, label],
                                 lambda bitstring: (-1)
                                 ** sum(1 for b in bitstring if b == "1")
-                                == exact_parity,  # pylint: disable=cell-var-from-loop
+                                == exact_parity[occupied_orbitals],  # pylint: disable=cell-var-from-loop
                             )
                             quasis_ps[permutation, label] = new_quasis
                             ps_removed_mass[permutation, label] = removed_mass
@@ -285,8 +333,33 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                         "pur",
                     ] = (purify_idempotent_matrix(corr_mat_ps), cov_ps)
 
+                
+                # for dd_sequence, label in itertools.product(
+                #     dd_sequences, ['raw', 'mem', 'ps', 'pur']
+                # ):
+                #     corr_mat, cov = corr_matrices[
+                #         tunneling,
+                #         superconducting,
+                #         chemical_potential,
+                #         occupied_orbitals,
+                #         dd_sequence,
+                #         label,
+                #     ]
+            chemical_potential_data[chemical_potential] = {
+                "transformation_matrix" : transformation_matrix,
+                "orbital_energies" : orbital_energies,
+                "constant" : constant,
+                "full_transformation_matrix" : full_transformation_matrix,
+                "hamiltonian_parity" : hamiltonian_parity,
+                "exact_parity" : exact_parity,
+                "corr_exact" : corr_exact,
+            }
+
+        yield from self._compute_simulation_results(chemical_potential_data, tunneling, superconducting, params)
+
         yield from self._compute_fidelity_witness(
             ["raw", "mem", "ps", "pur"],
+            chemical_potential_data,
             corr_matrices,
             params.n_modes,
             tunneling,
@@ -297,6 +370,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         )
         yield from self._compute_energy(
             ["raw", "mem", "ps", "pur"],
+            chemical_potential_data,
             corr_matrices,
             params.n_modes,
             tunneling,
@@ -347,6 +421,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
 
     def _compute_simulation_results(
         self,
+        chemical_potential_data,
         tunneling: float,
         superconducting: Union[float, complex],
         params: KitaevHamiltonianExperimentParameters,
@@ -460,35 +535,36 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         site_correlation_exact = defaultdict(list)  # dict[tuple[int, ...], list[float]]
 
         for chemical_potential in params.chemical_potential_values:
+            corr_exact = chemical_potential_data[chemical_potential]['corr_exact']
             # diagonalize Hamiltonian
-            (
-                transformation_matrix,
-                orbital_energies,
-                constant,
-            ) = diagonalizing_bogoliubov_transform(
-                params.n_modes,
-                tunneling=tunneling,
-                superconducting=superconducting,
-                chemical_potential=chemical_potential,
-            )
-            W1 = transformation_matrix[:, : params.n_modes]
-            W2 = transformation_matrix[:, params.n_modes :]
-            full_transformation_matrix = np.block([[W1, W2], [W2.conj(), W1.conj()]])
+            # (
+            #     transformation_matrix,
+            #     orbital_energies,
+            #     constant,
+            # ) = diagonalizing_bogoliubov_transform(
+            #     params.n_modes,
+            #     tunneling=tunneling,
+            #     superconducting=superconducting,
+            #     chemical_potential=chemical_potential,
+            # )
+            # W1 = transformation_matrix[:, : params.n_modes]
+            # W2 = transformation_matrix[:, params.n_modes :]
+            # full_transformation_matrix = np.block([[W1, W2], [W2.conj(), W1.conj()]])
             # compute results
             for occupied_orbitals in params.occupied_orbitals_list:
                 # compute exact correlation matrix
-                occupation = np.zeros(params.n_modes)
-                occupation[list(occupied_orbitals)] = 1.0
-                corr_diag = np.diag(np.concatenate([occupation, 1 - occupation]))
-                corr_exact = (
-                    full_transformation_matrix.T.conj()
-                    @ corr_diag
-                    @ full_transformation_matrix
-                )
+                # occupation = np.zeros(params.n_modes)
+                # occupation[list(occupied_orbitals)] = 1.0
+                # corr_diag = np.diag(np.concatenate([occupation, 1 - occupation]))
+                # corr_exact = (
+                #     full_transformation_matrix.T.conj()
+                #     @ corr_diag
+                #     @ full_transformation_matrix
+                # )
                 for site_correlation in site_correlation_ops:
                     exact_site_correlation, _ = np.real(
                         expectation_from_correlation_matrix(
-                            site_correlation, corr_exact
+                            site_correlation, corr_exact[occupied_orbitals]
                         )
                     )
                     site_correlation_exact[
@@ -503,6 +579,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
     def _compute_fidelity_witness(
         self,
         labels: list[str],
+        chemical_potential_data,
         corr: dict[
             tuple[
                 float, Union[float, complex], float, tuple[int, ...], Optional[str], str
@@ -524,26 +601,27 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             for dd_sequence in dynamical_decoupling_sequences
         }
         for chemical_potential in chemical_potential_values:
+            corr_exact = chemical_potential_data[chemical_potential]['corr_exact']
             # diagonalize Hamiltonian
-            (transformation_matrix, _, _,) = diagonalizing_bogoliubov_transform(
-                n_modes,
-                tunneling=tunneling,
-                superconducting=superconducting,
-                chemical_potential=chemical_potential,
-            )
-            W1 = transformation_matrix[:, :n_modes]
-            W2 = transformation_matrix[:, n_modes:]
-            full_transformation_matrix = np.block([[W1, W2], [W2.conj(), W1.conj()]])
+            # (transformation_matrix, _, _,) = diagonalizing_bogoliubov_transform(
+            #     n_modes,
+            #     tunneling=tunneling,
+            #     superconducting=superconducting,
+            #     chemical_potential=chemical_potential,
+            # )
+            # W1 = transformation_matrix[:, :n_modes]
+            # W2 = transformation_matrix[:, n_modes:]
+            # full_transformation_matrix = np.block([[W1, W2], [W2.conj(), W1.conj()]])
             for occupied_orbitals in occupied_orbitals_list:
                 # compute exact correlation matrix
-                occupation = np.zeros(n_modes)
-                occupation[list(occupied_orbitals)] = 1.0
-                corr_diag = np.diag(np.concatenate([occupation, 1 - occupation]))
-                corr_exact = (
-                    full_transformation_matrix.T.conj()
-                    @ corr_diag
-                    @ full_transformation_matrix
-                )
+                # occupation = np.zeros(n_modes)
+                # occupation[list(occupied_orbitals)] = 1.0
+                # corr_diag = np.diag(np.concatenate([occupation, 1 - occupation]))
+                # corr_exact = (
+                #     full_transformation_matrix.T.conj()
+                #     @ corr_diag
+                #     @ full_transformation_matrix
+                # )
                 for dd_sequence, label in itertools.product(
                     dynamical_decoupling_sequences, labels
                 ):
@@ -555,7 +633,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                         dd_sequence,
                         label,
                     ]
-                    fidelity_wit, stddev = fidelity_witness(corr_mat, corr_exact, cov)
+                    fidelity_wit, stddev = fidelity_witness(corr_mat, corr_exact[occupied_orbitals], cov)
                     data[dd_sequence][label][occupied_orbitals].append(
                         (fidelity_wit, stddev)
                     )
@@ -593,6 +671,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
     def _compute_energy(
         self,
         labels: list[str],
+        chemical_potential_data,
         corr: dict[
             tuple[
                 float, Union[float, complex], float, tuple[int, ...], Optional[str], str
@@ -615,7 +694,9 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             for dd_sequence in dynamical_decoupling_sequences
         }
         for chemical_potential in chemical_potential_values:
-            # create Hamiltonian
+            orbital_energies = chemical_potential_data[chemical_potential]['orbital_energies']
+            constant = chemical_potential_data[chemical_potential]['constant']
+            # create Hamiltonian            
             hamiltonian_quad = kitaev_hamiltonian(
                 n_modes,
                 tunneling=tunneling,
@@ -623,12 +704,12 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 chemical_potential=chemical_potential,
             )
             # diagonalize
-            (_, orbital_energies, constant,) = diagonalizing_bogoliubov_transform(
-                n_modes,
-                tunneling=tunneling,
-                superconducting=superconducting,
-                chemical_potential=chemical_potential,
-            )
+            # (_, orbital_energies, constant,) = diagonalizing_bogoliubov_transform(
+            #     n_modes,
+            #     tunneling=tunneling,
+            #     superconducting=superconducting,
+            #     chemical_potential=chemical_potential,
+            # )
             for occupied_orbitals in occupied_orbitals_list:
                 exact_energy = (
                     np.sum(orbital_energies[list(occupied_orbitals)]) + constant
@@ -679,8 +760,9 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 error += np.abs(values - exact)
                 error_stddev += np.array(stddevs) ** 2
             error /= len(occupied_orbitals_list)
+            error_percentage = np.divide(error, exact)
             error_stddev = np.sqrt(error_stddev) / len(occupied_orbitals_list)
-            data_error[dd_sequence][label] = error, error_stddev
+            data_error[dd_sequence][label] = error, error_stddev, error_percentage
         yield AnalysisResultData("energy_error", data_error)
 
         # BdG

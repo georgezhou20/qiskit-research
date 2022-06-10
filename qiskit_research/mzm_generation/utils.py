@@ -39,7 +39,7 @@ from qiskit.circuit.library import XXMinusYYGate, XXPlusYYGate
 from qiskit.providers import Backend, Provider
 from qiskit.providers.aer import AerSimulator
 from qiskit.quantum_info import SparsePauliOp
-from qiskit.transpiler import CouplingMap, Layout, PassManager
+from qiskit.transpiler import CouplingMap, Layout, PassManager, InstructionDurations
 from qiskit.transpiler.basepasses import BasePass
 from qiskit.transpiler.passes import (
     ApplyLayout,
@@ -68,7 +68,11 @@ from qiskit_research.utils import (
     dynamical_decoupling_passes,
     add_pulse_calibrations,
 )
+from qiskit_research.utils.dynamical_decoupling import get_instruction_durations
+from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
 from qiskit_research.utils.pulse_scaling import BASIS_GATES
+from qiskit.converters import circuit_to_dag, dag_to_circuit
+
 
 _CovarianceDict = Dict[FrozenSet[Tuple[int, int]], float]
 
@@ -754,6 +758,9 @@ def transpile_circuit(
     backend: Backend,
     initial_layout: Optional[list[int]] = None,
     dynamical_decoupling_sequence: Optional[str] = None,
+    num_dd_passes: Optional[int] = 1,
+    uhrig_spacing: Optional[bool] = False,
+    concat_layers: Optional[int] = 1,
     pulse_scaling: bool = False,
     pauli_twirling: bool = False,
     seed: Any = None,
@@ -766,13 +773,17 @@ def transpile_circuit(
                 backend,
                 initial_layout,
                 dynamical_decoupling_sequence,
+                num_dd_passes,
+                uhrig_spacing,
+                concat_layers,
                 pulse_scaling,
                 pauli_twirling,
                 seed,
-            )
+            ),
         )
     )
     transpiled = pass_manager.run(circuit)
+    
     if dynamical_decoupling_sequence:
         add_pulse_calibrations(transpiled, backend)
     return transpiled
@@ -783,6 +794,9 @@ def transpilation_passes(
     backend: Backend,
     initial_layout: Optional[list[int]] = None,
     dynamical_decoupling_sequence: Optional[str] = None,
+    num_dd_passes: Optional[int] = 1,
+    uhrig_spacing: Optional[bool] = False,
+    concat_layers: Optional[int] = 1,
     pulse_scaling: bool = False,
     pauli_twirling: bool = False,
     seed: Any = None,
@@ -823,8 +837,10 @@ def transpilation_passes(
         if pauli_twirling:
             yield PauliTwirl(seed=seed)
         yield Optimize1qGatesDecomposition(BASIS_GATES)
+    yield ALAPScheduleAnalysis(get_instruction_durations(backend))
+
     # add dynamical decoupling if needed
     if dynamical_decoupling_sequence:
         yield from dynamical_decoupling_passes(
-            backend, dynamical_decoupling_sequence, ALAPScheduleAnalysis
+            backend, dynamical_decoupling_sequence, uhrig_spacing, concat_layers, num_dd_passes, ALAPScheduleAnalysis
         )

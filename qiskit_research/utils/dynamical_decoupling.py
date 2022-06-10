@@ -21,12 +21,24 @@ from qiskit.circuit.library import XGate, YGate
 from qiskit.providers.backend import Backend
 from qiskit.pulse import DriveChannel
 from qiskit.qasm import pi
-from qiskit.transpiler import InstructionDurations
+from qiskit.transpiler import InstructionDurations, CouplingMap
 from qiskit.transpiler.basepasses import BasePass
 from qiskit.transpiler.instruction_durations import InstructionDurationsType
-from qiskit.transpiler.passes import PadDynamicalDecoupling
-from qiskit.transpiler.passes.scheduling import ALAPScheduleAnalysis
+from qiskit.transpiler.passes import (
+    PadDynamicalDecoupling, 
+    TimeUnitConversion, 
+    ALAPScheduleAnalysis,
+    PadDelay,
+    ConstrainedReschedule,
+)
+from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
 from qiskit_research.utils.gates import XmGate, XpGate, YmGate, YpGate
+
+from qiskit_research.utils.combine_adjacent_delays import CombineAdjacentDelays
+from qiskit_research.utils.dynamical_decoupling_new import DynamicalDecoupling
+
+
+import numpy as np
 
 X = XGate()
 Xp = XpGate()
@@ -47,15 +59,33 @@ DD_SEQUENCE = {
 
 
 def dynamical_decoupling_passes(
-    backend, dd_str: str, scheduler: BasePass = ALAPScheduleAnalysis
+    backend, dd_str: str, num_dd_passes: int, uhrig_spacing: bool, concat_layers: int, scheduler: BasePass = ALAPScheduleAnalysis
 ) -> Iterable[BasePass]:
     """Yields transpilation passes for dynamical decoupling."""
     durations = get_instruction_durations(backend)
-    pulse_alignment  = backend.configuration().timing_constraints['pulse_alignment']
+    pulse_alignment = backend.configuration().timing_constraints['pulse_alignment']
+    acquire_alignment = backend.configuration().timing_constraints['acquire_alignment']
+    coupling_map = CouplingMap(backend.configuration().coupling_map)
 
-    sequence = DD_SEQUENCE[dd_str]
+    yield TimeUnitConversion(durations)
     yield scheduler(durations)
-    yield PadDynamicalDecoupling(durations, list(sequence), pulse_alignment=pulse_alignment)
+    yield ConstrainedReschedule(acquire_alignment=acquire_alignment, pulse_alignment=pulse_alignment)
+    yield PadDelay()
+    yield CombineAdjacentDelays(coupling_map)
+    sequence = generate_concatenated_dd_seqence(dd_str, concat_layers)
+    dd_spacing = None
+    
+    if uhrig_spacing:
+        dd_spacing = []
+        n = len(sequence) 
+        for i in range(n):
+            spacing = np.sin(np.pi * (i + 1) / (2 * n + 2)) ** 2
+            dd_spacing.append(spacing - sum(dd_spacing))
+        dd_spacing.append(1 - sum(dd_spacing))
+    
+    yield DynamicalDecoupling(durations=durations, dd_sequence=sequence, spacing=dd_spacing, pulse_alignment=pulse_alignment)
+    yield DynamicalDecouplingMulti(durations=durations, dd_sequence=sequence, coupling_map=coupling_map, pulse_alignment=pulse_alignment)
+
 
 
 # TODO this should take instruction schedule map instead of backend
@@ -162,3 +192,16 @@ def add_pulse_calibrations(
             # add calibrations to circuits
             for circ in circuits:
                 circ.add_calibration("ym", [qubit], sched)
+
+def generate_concatenated_dd_seqence(dd_str : str, concat_layers: int):
+    sequence = []
+    for i in range(concat_layers):
+        sequence = _generate_concatenated_dd_sequence(dd_str, sequence)
+    return sequence
+
+def _generate_concatenated_dd_sequence(dd_str: str, sequence):
+    concat_sequence = []
+    for gate in DD_SEQUENCE[dd_str]:
+        concat_sequence.extend(sequence)
+        concat_sequence.append(gate)
+    return concat_sequence

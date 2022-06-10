@@ -46,6 +46,9 @@ CircuitParameters = namedtuple(
         "permutation",
         "measurement_label",
         "dynamical_decoupling_sequence",
+        "num_dd_passes",
+        "uhrig_spacing",
+        "concat_layers",
         "pauli_twirl_index",
     ],
 )
@@ -64,6 +67,9 @@ class KitaevHamiltonianExperimentParameters:
     chemical_potential_values: list[float]
     occupied_orbitals_list: list[tuple[int, ...]]
     dynamical_decoupling_sequences: Optional[list[str]] = None
+    num_dd_passes: Optional[int] = 1
+    uhrig_spacing: Optional[bool] = False
+    concat_layers: Optional[int] = 1
     pulse_scaling: bool = False
     num_twirled_circuits: int = 0
     seed: Optional[int] = None
@@ -144,6 +150,9 @@ class KitaevHamiltonianExperiment(BaseExperiment):
                             permutation=permutation,
                             measurement_label=label,
                             dynamical_decoupling_sequence=dd_sequence,
+                            num_dd_passes=self.params.num_dd_passes,
+                            uhrig_spacing=self.params.uhrig_spacing,
+                            concat_layers=self.params.concat_layers,
                             pauli_twirl_index=pauli_twirl_index
                             if self.params.num_twirled_circuits
                             else None,
@@ -184,6 +193,15 @@ class KitaevHamiltonianExperiment(BaseExperiment):
                 dynamical_decoupling_sequence=circuit.metadata[
                     "params"
                 ].dynamical_decoupling_sequence,
+                num_dd_passes=circuit.metadata[
+                    "params"
+                ].num_dd_passes,
+                uhrig_spacing=circuit.metadata[
+                    "params"
+                ].uhrig_spacing,
+                concat_layers=circuit.metadata[
+                    "params"
+                ].concat_layers,
                 pulse_scaling=self.params.pulse_scaling,
                 pauli_twirling=bool(self.params.num_twirled_circuits),
                 seed=self.rng,
