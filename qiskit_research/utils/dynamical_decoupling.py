@@ -25,16 +25,15 @@ from qiskit.transpiler import InstructionDurations, CouplingMap
 from qiskit.transpiler.basepasses import BasePass
 from qiskit.transpiler.instruction_durations import InstructionDurationsType
 from qiskit.transpiler.passes import (
-    PadDynamicalDecoupling, 
     TimeUnitConversion, 
     ALAPScheduleAnalysis,
     PadDelay,
     ConstrainedReschedule,
-    
-    # CombineAdjacentDelays,
-    # DynamicalDecoupling,
-    # DynamicalDecouplingMulti,
 )
+
+from qiskit_research.utils.combine_adjacent_delays import CombineAdjacentDelays
+from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
+from qiskit_research.utils.dynamical_decoupling_single import DynamicalDecoupling
 # from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
 from qiskit_research.utils.gates import XmGate, XpGate, YmGate, YpGate
 # from qiskit_research.utils.combine_adjacent_delays import CombineAdjacentDelays
@@ -71,25 +70,31 @@ def dynamical_decoupling_passes(
     pulse_alignment = backend.configuration().timing_constraints['pulse_alignment']
     acquire_alignment = backend.configuration().timing_constraints['acquire_alignment']
     coupling_map = CouplingMap(backend.configuration().coupling_map)
+    # skip_threshold = [0.3, 0.7]
 
     yield TimeUnitConversion(durations)
     yield scheduler(durations)
     yield ConstrainedReschedule(acquire_alignment=acquire_alignment, pulse_alignment=pulse_alignment)
     yield PadDelay()
     yield CombineAdjacentDelays(coupling_map)
-    sequence = generate_concatenated_dd_seqence(dd_str, concat_layers)
+    sequence2 = generate_concatenated_dd_seqence(dd_str, concat_layers)
+    sequence1 = generate_concatenated_dd_seqence('XY8pm', concat_layers)
     dd_spacing = None
     
-    if uhrig_spacing:
-        dd_spacing = []
-        n = len(sequence) 
-        for i in range(n):
-            spacing = np.sin(np.pi * (i + 1) / (2 * n + 2)) ** 2
-            dd_spacing.append(spacing - sum(dd_spacing))
-        dd_spacing.append(1 - sum(dd_spacing))
+    # if uhrig_spacing:
+    #     dd_spacing = []
+    #     n = len(sequence) 
+    #     for i in range(n):
+    #         spacing = np.sin(np.pi * (i + 1) / (2 * n + 2)) ** 2
+    #         dd_spacing.append(spacing - sum(dd_spacing))
+    #     dd_spacing.append(1 - sum(dd_spacing))
     
-    yield DynamicalDecoupling(durations=durations, dd_sequence=sequence, spacing=dd_spacing, pulse_alignment=pulse_alignment)
-    yield DynamicalDecouplingMulti(durations=durations, dd_sequence=sequence, coupling_map=coupling_map, pulse_alignment=pulse_alignment)
+    # yield DynamicalDecoupling(durations=durations, dd_sequence=DD_SEQUENCE['XY8pm'], spacing=dd_spacing, pulse_alignment=pulse_alignment,skip_threshold=skip_threshold)
+    # yield DynamicalDecoupling(durations=durations, dd_sequence=DD_SEQUENCE['XY4pm'], spacing=dd_spacing, pulse_alignment=pulse_alignment,skip_threshold=skip_threshold)
+    # yield DynamicalDecoupling(durations=durations, dd_sequence=sequence1, spacing=dd_spacing, pulse_alignment=pulse_alignment, skip_threshold=[0.2, 0.8])
+    yield DynamicalDecoupling(durations=durations, dd_sequence=sequence2, spacing=dd_spacing, pulse_alignment=pulse_alignment)
+
+    yield DynamicalDecouplingMulti(durations=durations, coupling_map=coupling_map, pulse_alignment=pulse_alignment)
 
 
 

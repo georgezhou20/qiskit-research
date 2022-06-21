@@ -39,7 +39,7 @@ from qiskit.circuit.library import XXMinusYYGate, XXPlusYYGate
 from qiskit.providers import Backend, Provider
 from qiskit.providers.aer import AerSimulator
 from qiskit.quantum_info import SparsePauliOp
-from qiskit.transpiler import CouplingMap, Layout, PassManager, InstructionDurations
+from qiskit.transpiler import Layout, PassManager, CouplingMap
 from qiskit.transpiler.basepasses import BasePass
 from qiskit.transpiler.passes import (
     ApplyLayout,
@@ -69,9 +69,8 @@ from qiskit_research.utils import (
     add_pulse_calibrations,
 )
 from qiskit_research.utils.dynamical_decoupling import get_instruction_durations
-from qiskit_research.utils.dynamical_decoupling_multi import DynamicalDecouplingMulti
 from qiskit_research.utils.pulse_scaling import BASIS_GATES
-from qiskit.converters import circuit_to_dag, dag_to_circuit
+# from qiskit_research.utils.coupling import CouplingMap
 
 
 _CovarianceDict = Dict[FrozenSet[Tuple[int, int]], float]
@@ -476,7 +475,6 @@ def compute_correlation_matrix(
         - Dictionary containing covariances between entries of the correlation matrix
     """
     n = len(next(iter(next(iter(quasis.values())))))
-
     # off-diagonal entries
     tunneling_plus, tunneling_plus_cov = compute_interaction_matrix(
         quasis, "tunneling_plus"
@@ -693,11 +691,15 @@ def purify_idempotent_matrix(
     error = np.inf
     iterations = 0
     while error > tol and iterations < max_iter:
+        # print(mat)
+        # print(iterations)
         mat = mat @ mat @ (three - 2 * mat)
         error = cast(float, np.linalg.norm(mat @ mat - mat))
         iterations += 1
     if error > tol:
         raise RuntimeError("Purification failed to converge.")
+    # print('Final')
+    # print(mat)
     return mat
 
 
@@ -837,7 +839,6 @@ def transpilation_passes(
         if pauli_twirling:
             yield PauliTwirl(seed=seed)
         yield Optimize1qGatesDecomposition(BASIS_GATES)
-    yield ALAPScheduleAnalysis(get_instruction_durations(backend))
 
     # add dynamical decoupling if needed
     if dynamical_decoupling_sequence:

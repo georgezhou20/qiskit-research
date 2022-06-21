@@ -20,32 +20,13 @@ import retworkx as rx
 
 from qiskit.circuit.delay import Delay
 from qiskit.circuit.reset import Reset
-from qiskit.circuit.library.standard_gates import IGate, XGate, YGate, RZGate
+from qiskit.circuit.library.standard_gates import IGate, XGate, RZGate
 from qiskit.dagcircuit import DAGOpNode, DAGInNode
 from qiskit.quantum_info.operators.predicates import matrix_equal
 from qiskit.quantum_info.synthesis import OneQubitEulerDecomposer
 from qiskit.transpiler.passes.optimization import Optimize1qGates
 from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.transpiler.exceptions import TranspilerError
-from qiskit_research.utils.gates import XmGate, XpGate, YmGate, YpGate
-
-
-# X = XGate()
-# Xp = XpGate()
-# Xm = XmGate()
-# Y = YGate()
-# Yp = YpGate()
-# Ym = YmGate()
-
-
-# DD_SEQUENCE = {
-#     "X2": (X, X),
-#     "X2pm": (Xp, Xm),
-#     "XY4": (X, Y, X, Y),
-#     "XY4pm": (Xp, Yp, Xm, Ym),
-#     "XY8": (X, Y, X, Y, Y, X, Y, X),
-#     "XY8pm": (Xp, Yp, Xm, Ym, Ym, Xm, Yp, Xp),
-# }
 
 
 class DynamicalDecouplingMulti(TransformationPass):
@@ -53,7 +34,7 @@ class DynamicalDecouplingMulti(TransformationPass):
 
     """
 
-    def __init__(self, durations, coupling_map, dd_sequence,
+    def __init__(self, durations, coupling_map,
                  skip_reset_qubits=True, pulse_alignment=1, skip_threshold=1):
         """Dynamical decoupling initializer.
 
@@ -62,7 +43,6 @@ class DynamicalDecouplingMulti(TransformationPass):
                 used in scheduling.
             coupling_map (CouplingMap): qubit couplings which influences the pattern
                 of multi-qubit DD.
-            
             skip_reset_qubits (bool): if True, does not insert DD on idle
                 periods that immediately follow initialized/reset qubits (as
                 qubits in the ground state are less susceptile to decoherence).
@@ -79,7 +59,7 @@ class DynamicalDecouplingMulti(TransformationPass):
         self._coupling_map = coupling_map
         self._skip_reset_qubits = skip_reset_qubits
         self._alignment = pulse_alignment
-        self._dd_sequence = dd_sequence
+        self._dd_sequence = [XGate(), RZGate(np.pi), XGate(), RZGate(-np.pi)]
         self._spacing_odd = [1/2, 1/2, 0, 0, 0]
         self._spacing_even = [1/4, 1/2, 0, 0, 1/4]
         self._addition_odd = [1, 1, 0, 0, 0]
@@ -102,7 +82,6 @@ class DynamicalDecouplingMulti(TransformationPass):
         if len(dag.qregs) != 1 or dag.qregs.get("q", None) is None:
             raise TranspilerError("DD runs on physical circuits only.")
 
-        print (dag.duration)
         if dag.duration is None:
             raise TranspilerError("DD runs after circuit is scheduled.")
 
