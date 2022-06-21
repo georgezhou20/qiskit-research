@@ -164,3 +164,4 @@ docs/mzm_generation/data/
 
 # plot directories
 docs/mzm_generation/plots/
+*.p
