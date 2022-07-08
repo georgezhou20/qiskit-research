@@ -15,15 +15,21 @@
 from __future__ import annotations
 
 import dataclasses
+from email.policy import default
 import functools
 import itertools
 from collections import namedtuple
+from turtle import back
 from typing import Iterable, Optional, Union
+
+from qiskit.providers.aer import AerSimulator
+from qiskit.providers.aer.noise import NoiseModel, QuantumError
+from qiskit.transpiler import CouplingMap
 
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.circuit.library import RZGate
-from qiskit.providers import Provider
+from qiskit.circuit.library import RZGate, CXGate
+from qiskit.providers import Provider, Backend
 from qiskit_experiments.framework import BaseExperiment
 from qiskit_nature.circuit.library import FermionicGaussianState
 from qiskit_research.mzm_generation.utils import (
@@ -33,6 +39,7 @@ from qiskit_research.mzm_generation.utils import (
     measurement_labels,
     transpile_circuit,
 )
+from qiskit_research.utils.pulse_scaling import BASIS_GATES
 
 # TODO make this a JSON serializable dataclass when Aer supports it
 # See https://github.com/Qiskit/qiskit-aer/issues/1435
@@ -101,6 +108,13 @@ class KitaevHamiltonianExperiment(BaseExperiment):
         self.params = params
         self.rng = np.random.default_rng(params.seed)
         backend = get_backend(params.backend_name, provider, seed_simulator=params.seed)
+
+        # simulating_backend = get_backend('ibmq_guadalupe', provider)
+        # noise_model = NoiseModel.from_backend(simulating_backend, readout_error=False,gate_error=True, thermal_relaxation=True)
+        # backend = AerSimulator(noise_model=noise_model, basis_gates=noise_model.basis_gates, coupling_map=simulating_backend.configuration().coupling_map,
+        #                         configuration=simulating_backend.configuration(), properties=simulating_backend.properties())
+        # backend = AerSimulator.from_backend(simulating_backend, noise_model=noise_model)
+
         super().__init__(qubits=params.qubits, backend=backend)
 
     def _metadata(self) -> dict:

@@ -67,9 +67,11 @@ def dynamical_decoupling_passes(
 ) -> Iterable[BasePass]:
     """Yields transpilation passes for dynamical decoupling."""
     durations = get_instruction_durations(backend)
+    # durations = InstructionDurations.from_backend(backend)
     pulse_alignment = backend.configuration().timing_constraints['pulse_alignment']
     acquire_alignment = backend.configuration().timing_constraints['acquire_alignment']
     coupling_map = CouplingMap(backend.configuration().coupling_map)
+
     # skip_threshold = [0.3, 0.7]
 
     yield TimeUnitConversion(durations)
@@ -77,6 +79,7 @@ def dynamical_decoupling_passes(
     yield ConstrainedReschedule(acquire_alignment=acquire_alignment, pulse_alignment=pulse_alignment)
     yield PadDelay()
     yield CombineAdjacentDelays(coupling_map)
+    
     sequence2 = generate_concatenated_dd_seqence(dd_str, concat_layers)
     sequence1 = generate_concatenated_dd_seqence('XY8pm', concat_layers)
     dd_spacing = None
@@ -89,13 +92,8 @@ def dynamical_decoupling_passes(
     #         dd_spacing.append(spacing - sum(dd_spacing))
     #     dd_spacing.append(1 - sum(dd_spacing))
     
-    # yield DynamicalDecoupling(durations=durations, dd_sequence=DD_SEQUENCE['XY8pm'], spacing=dd_spacing, pulse_alignment=pulse_alignment,skip_threshold=skip_threshold)
-    # yield DynamicalDecoupling(durations=durations, dd_sequence=DD_SEQUENCE['XY4pm'], spacing=dd_spacing, pulse_alignment=pulse_alignment,skip_threshold=skip_threshold)
-    # yield DynamicalDecoupling(durations=durations, dd_sequence=sequence1, spacing=dd_spacing, pulse_alignment=pulse_alignment, skip_threshold=[0.2, 0.8])
     yield DynamicalDecoupling(durations=durations, dd_sequence=sequence2, spacing=dd_spacing, pulse_alignment=pulse_alignment)
-
     yield DynamicalDecouplingMulti(durations=durations, coupling_map=coupling_map, pulse_alignment=pulse_alignment)
-
 
 
 # TODO this should take instruction schedule map instead of backend

@@ -9,7 +9,7 @@ from typing import List
 from qiskit.circuit import Delay, QuantumCircuit
 from qiskit.converters import circuit_to_dag
 from qiskit.dagcircuit import DAGOpNode
-from qiskit.transpiler import TransformationPass, CouplingMap
+from qiskit.transpiler import TransformationPass
 
 logger = logging.getLogger(__name__)
 

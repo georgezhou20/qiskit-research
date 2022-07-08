@@ -842,6 +842,7 @@ def transpilation_passes(
 
     # add dynamical decoupling if needed
     if dynamical_decoupling_sequence:
+        print(dynamical_decoupling_sequence)
         yield from dynamical_decoupling_passes(
             backend, dynamical_decoupling_sequence, uhrig_spacing, concat_layers, num_dd_passes, ALAPScheduleAnalysis
         )

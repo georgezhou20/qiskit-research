@@ -219,6 +219,18 @@ class DynamicalDecoupling(TransformationPass):
                     continue
 
             dd_sequence_duration = index_sequence_duration_map[physical_qubit]
+            repetitions = int(nd.op.duration / dd_sequence_duration)
+            current_sequence = self._dd_sequence
+            current_spacing = self._spacing.copy()
+
+            # if repetitions > 1: 
+            #     dd_sequence_duration *= repetitions
+            #     current_sequence = self._dd_sequence * repetitions
+            #     for _ in range(repetitions - 1):
+            #         current_spacing[-1] += self._spacing[0]
+            #         current_spacing.extend(self._spacing[1:])
+            #     current_spacing = [spacing / repetitions for spacing in current_spacing]
+
             slack = nd.op.duration - dd_sequence_duration
             slack_fraction = slack / nd.op.duration
             if 1-slack_fraction >= self._skip_threshold:  # dd doesn't fit
@@ -248,19 +260,18 @@ class DynamicalDecoupling(TransformationPass):
                     continue
 
             # insert the actual DD sequence
-            taus = _constrained_length(slack * np.asarray(self._spacing))
+            taus = _constrained_length(slack * np.asarray(current_spacing))
             unused_slack = slack - sum(taus)  # unused, due to rounding to int multiples of dt
             middle_index = int((len(taus) - 1) / 2)  # arbitrary: redistribute to middle
             taus[middle_index] += unused_slack  # now we add up to original delay duration
 
-            for tau, gate in itertools.zip_longest(taus, self._dd_sequence):
+            for tau, gate in itertools.zip_longest(taus, current_sequence):
                 if tau > 0:
                     new_dag.apply_operation_back(Delay(tau), [dag_qubit])
                 if gate is not None:
                     new_dag.apply_operation_back(gate, [dag_qubit])
 
             new_dag.global_phase = _mod_2pi(new_dag.global_phase + sequence_gphase)
-
         return new_dag
 
 
