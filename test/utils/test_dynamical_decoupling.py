@@ -14,9 +14,8 @@
 
 from qiskit import transpile, IBMQ
 from qiskit.circuit import QuantumCircuit
-from qiskit.providers.fake_provider import FakeLima
-from qiskit_research.utils.convenience import add_dynamical_decoupling
 from qiskit.providers.fake_provider import FakeWashington
+from qiskit_research.utils.convenience import add_dynamical_decoupling
 
 
 def test_add_dynamical_decoupling():
@@ -28,14 +27,7 @@ def test_add_dynamical_decoupling():
     circuit.cx(0, 1)
     circuit.rx(1.0, [0, 1, 2])
 
-    provider = IBMQ.load_account()
-
-    backend = provider.get_backend("ibm_oslo")
-    transpiled = transpile(circuit, backend)
-    transpiled_dd = add_dynamical_decoupling(transpiled, backend, "XY4pm")
-    assert isinstance(transpiled_dd, QuantumCircuit)
-
-    backend = provider.get_backend("ibmq_lima")
+    backend = FakeWashington()
     transpiled = transpile(circuit, backend)
     transpiled_dd = add_dynamical_decoupling(transpiled, backend, "XY4pm")
     assert isinstance(transpiled_dd, QuantumCircuit)
