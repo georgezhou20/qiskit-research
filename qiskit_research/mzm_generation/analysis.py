@@ -305,45 +305,45 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             params.occupied_orbitals_list,
             dd_sequences,
         )
-        yield from self._compute_edge_correlation(
-            ["raw", "mem", "ps", "pur"],
-            corr_matrices,
-            params.n_modes,
-            tunneling,
-            superconducting,
-            params.chemical_potential_values,
-            params.occupied_orbitals_list,
-            dd_sequences,
-        )
-        yield from self._compute_number(
-            ["raw", "mem", "ps", "pur"],
-            corr_matrices,
-            params.n_modes,
-            tunneling,
-            superconducting,
-            params.chemical_potential_values,
-            params.occupied_orbitals_list,
-            dd_sequences,
-        )
-        yield from self._compute_site_correlation(
-            ["raw", "mem", "ps", "pur"],
-            corr_matrices,
-            params.n_modes,
-            tunneling,
-            superconducting,
-            params.chemical_potential_values,
-            params.occupied_orbitals_list,
-            dd_sequences,
-        )
-        yield from self._compute_parity(
-            ["raw", "mem", "ps"],
-            quasi_dists,
-            tunneling,
-            superconducting,
-            params.chemical_potential_values,
-            params.occupied_orbitals_list,
-            dd_sequences,
-        )
+        # yield from self._compute_edge_correlation(
+        #     ["raw", "mem", "ps", "pur"],
+        #     corr_matrices,
+        #     params.n_modes,
+        #     tunneling,
+        #     superconducting,
+        #     params.chemical_potential_values,
+        #     params.occupied_orbitals_list,
+        #     dd_sequences,
+        # )
+        # yield from self._compute_number(
+        #     ["raw", "mem", "ps", "pur"],
+        #     corr_matrices,
+        #     params.n_modes,
+        #     tunneling,
+        #     superconducting,
+        #     params.chemical_potential_values,
+        #     params.occupied_orbitals_list,
+        #     dd_sequences,
+        # )
+        # yield from self._compute_site_correlation(
+        #     ["raw", "mem", "ps", "pur"],
+        #     corr_matrices,
+        #     params.n_modes,
+        #     tunneling,
+        #     superconducting,
+        #     params.chemical_potential_values,
+        #     params.occupied_orbitals_list,
+        #     dd_sequences,
+        # )
+        # yield from self._compute_parity(
+        #     ["raw", "mem", "ps"],
+        #     quasi_dists,
+        #     tunneling,
+        #     superconducting,
+        #     params.chemical_potential_values,
+        #     params.occupied_orbitals_list,
+        #     dd_sequences,
+        # )
 
     def _compute_simulation_results(
         self,
