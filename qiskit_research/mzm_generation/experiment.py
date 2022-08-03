@@ -33,6 +33,7 @@ from qiskit_research.mzm_generation.utils import (
     measurement_labels,
     transpile_circuit,
 )
+from qiskit_research.utils.convenience import add_periodic_dynamical_decoupling
 
 # TODO make this a JSON serializable dataclass when Aer supports it
 # See https://github.com/Qiskit/qiskit-aer/issues/1435
@@ -46,6 +47,7 @@ CircuitParameters = namedtuple(
         "permutation",
         "measurement_label",
         "dynamical_decoupling_sequence",
+        "max_repeats",
         "pauli_twirl_index",
     ],
 )
@@ -64,6 +66,7 @@ class KitaevHamiltonianExperimentParameters:
     chemical_potential_values: list[float]
     occupied_orbitals_list: list[tuple[int, ...]]
     dynamical_decoupling_sequences: Optional[list[str]] = None
+    max_repeats: Optional[list[int]] = None
     pulse_scaling: bool = False
     num_twirled_circuits: int = 0
     seed: Optional[int] = None
@@ -108,6 +111,7 @@ class KitaevHamiltonianExperiment(BaseExperiment):
 
     def _circuits(self) -> Iterable[QuantumCircuit]:
         dd_sequences = self.params.dynamical_decoupling_sequences or [None]
+        max_repeats = self.params.max_repeats or [None]
         for (
             tunneling,
             superconducting,
@@ -133,24 +137,26 @@ class KitaevHamiltonianExperiment(BaseExperiment):
                 if "_minus_" in label and _all_real_rz_gates(base_circuit, atol=1e-6):
                     continue
                 for dd_sequence in dd_sequences:
-                    for pauli_twirl_index in range(
-                        max(1, self.params.num_twirled_circuits)
-                    ):
-                        params = CircuitParameters(
-                            tunneling=tunneling,
-                            superconducting=superconducting,
-                            chemical_potential=chemical_potential,
-                            occupied_orbitals=occupied_orbitals,
-                            permutation=permutation,
-                            measurement_label=label,
-                            dynamical_decoupling_sequence=dd_sequence,
-                            pauli_twirl_index=pauli_twirl_index
-                            if self.params.num_twirled_circuits
-                            else None,
-                        )
-                        circuit = measure_interaction_op(base_circuit, label)
-                        circuit.metadata = {"params": params}
-                        yield circuit
+                    for max_repeat in max_repeats:
+                        for pauli_twirl_index in range(
+                            max(1, self.params.num_twirled_circuits)
+                        ):
+                            params = CircuitParameters(
+                                tunneling=tunneling,
+                                superconducting=superconducting,
+                                chemical_potential=chemical_potential,
+                                occupied_orbitals=occupied_orbitals,
+                                permutation=permutation,
+                                measurement_label=label,
+                                dynamical_decoupling_sequence=dd_sequence,
+                                max_repeats=max_repeat,
+                                pauli_twirl_index=pauli_twirl_index
+                                if self.params.num_twirled_circuits
+                                else None,
+                            )
+                            circuit = measure_interaction_op(base_circuit, label)
+                            circuit.metadata = {"params": params}
+                            yield circuit
 
     @functools.lru_cache(maxsize=1024)
     def _base_circuit(
@@ -176,20 +182,24 @@ class KitaevHamiltonianExperiment(BaseExperiment):
 
     def _transpiled_circuits(self) -> list[QuantumCircuit]:
         """Return a list of experiment circuits, transpiled."""
-        return [
+        transpiled_circs = [
             transpile_circuit(
                 circuit,
                 self.backend,
                 initial_layout=list(self.physical_qubits),
-                dynamical_decoupling_sequence=circuit.metadata[
-                    "params"
-                ].dynamical_decoupling_sequence,
                 pulse_scaling=self.params.pulse_scaling,
                 pauli_twirling=bool(self.params.num_twirled_circuits),
                 seed=self.rng,
             )
             for circuit in self.circuits()
         ]
+        return [add_periodic_dynamical_decoupling(
+            circuit,
+            self.backend,
+            circuit.metadata["params"].dynamical_decoupling_sequence,
+            max_repeats=circuit.metadata["params"].max_repeats,
+        ) for circuit in transpiled_circs]
+
 
 
 def _all_real_rz_gates(circuit: QuantumCircuit, rtol=1e-5, atol=1e-8) -> bool:

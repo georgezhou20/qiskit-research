@@ -753,7 +753,6 @@ def transpile_circuit(
     circuit: QuantumCircuit,
     backend: Backend,
     initial_layout: Optional[list[int]] = None,
-    dynamical_decoupling_sequence: Optional[str] = None,
     pulse_scaling: bool = False,
     pauli_twirling: bool = False,
     seed: Any = None,
@@ -765,7 +764,6 @@ def transpile_circuit(
                 circuit,
                 backend,
                 initial_layout,
-                dynamical_decoupling_sequence,
                 pulse_scaling,
                 pauli_twirling,
                 seed,
@@ -773,8 +771,6 @@ def transpile_circuit(
         )
     )
     transpiled = pass_manager.run(circuit)
-    if dynamical_decoupling_sequence:
-        add_pulse_calibrations(transpiled, backend)
     return transpiled
 
 
@@ -782,7 +778,6 @@ def transpilation_passes(
     circuit: QuantumCircuit,
     backend: Backend,
     initial_layout: Optional[list[int]] = None,
-    dynamical_decoupling_sequence: Optional[str] = None,
     pulse_scaling: bool = False,
     pauli_twirling: bool = False,
     seed: Any = None,
@@ -823,8 +818,3 @@ def transpilation_passes(
         if pauli_twirling:
             yield PauliTwirl(seed=seed)
         yield Optimize1qGatesDecomposition(BASIS_GATES)
-    # add dynamical decoupling if needed
-    if dynamical_decoupling_sequence:
-        yield from dynamical_decoupling_passes(
-            backend, dynamical_decoupling_sequence, ALAPScheduleAnalysis
-        )
