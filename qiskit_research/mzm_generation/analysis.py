@@ -71,9 +71,10 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 permutation,
                 measurement_label,
                 dynamical_decoupling_sequence,
-            ) = result["metadata"]["params"][:7]
-            if len(result["metadata"]["params"]) == 8:
-                pauli_twirl_index = result["metadata"]["params"][7]
+                max_repeats,
+            ) = result["metadata"]["params"][:8]
+            if len(result["metadata"]["params"]) == 9:
+                pauli_twirl_index = result["metadata"]["params"][8]
             else:
                 pauli_twirl_index = None
             circuit_params = CircuitParameters(
@@ -86,6 +87,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 permutation=tuple(permutation),
                 measurement_label=measurement_label,
                 dynamical_decoupling_sequence=dynamical_decoupling_sequence,
+                max_repeats=max_repeats,
                 pauli_twirl_index=pauli_twirl_index,
             )
             data[circuit_params] = result
@@ -136,6 +138,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
 
         # calculate results
         dd_sequences = params.dynamical_decoupling_sequences or [None]
+        max_repeats = params.max_repeats
         for chemical_potential in params.chemical_potential_values:
             # diagonalize
             (transformation_matrix, _, _,) = diagonalizing_bogoliubov_transform(
@@ -155,135 +158,146 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             for occupied_orbitals in params.occupied_orbitals_list:
                 exact_parity = (-1) ** len(occupied_orbitals) * hamiltonian_parity
                 for dd_sequence in dd_sequences:
-                    quasis_raw = (
-                        {}
-                    )  # dict[tuple[tuple[int, ...], str], QuasiDistribution]
-                    quasis_mem = (
-                        {}
-                    )  # dict[tuple[tuple[int, ...], str], QuasiDistribution]
-                    quasis_ps = (
-                        {}
-                    )  # dict[tuple[tuple[int, ...], str], QuasiDistribution]
-                    ps_removed_mass = {}  # dict[tuple[tuple[int, ...], str], float]
-                    for permutation, label in measurement_labels(params.n_modes):
-                        circuit_params = CircuitParameters(
+                    for max_repeat in max_repeats:
+                        quasis_raw = (
+                            {}
+                        )  # dict[tuple[tuple[int, ...], str], QuasiDistribution]
+                        quasis_mem = (
+                            {}
+                        )  # dict[tuple[tuple[int, ...], str], QuasiDistribution]
+                        quasis_ps = (
+                            {}
+                        )  # dict[tuple[tuple[int, ...], str], QuasiDistribution]
+                        ps_removed_mass = {}  # dict[tuple[tuple[int, ...], str], float]
+                        for permutation, label in measurement_labels(params.n_modes):
+                            circuit_params = CircuitParameters(
+                                tunneling,
+                                superconducting,
+                                chemical_potential,
+                                occupied_orbitals,
+                                permutation,
+                                label,
+                                dynamical_decoupling_sequence=dd_sequence,
+                                max_repeats=max_repeat,
+                                pauli_twirl_index=0
+                                if params.num_twirled_circuits
+                                else None,
+                            )
+                            if circuit_params in data:
+                                counts = Counts({})
+                                for pauli_twirl_index in range(
+                                    max(1, params.num_twirled_circuits)
+                                ):
+                                    circuit_params = CircuitParameters(
+                                        tunneling,
+                                        superconducting,
+                                        chemical_potential,
+                                        occupied_orbitals,
+                                        permutation,
+                                        label,
+                                        dynamical_decoupling_sequence=dd_sequence,
+                                        max_repeats=max_repeat,
+                                        pauli_twirl_index=pauli_twirl_index
+                                        if params.num_twirled_circuits
+                                        else None,
+                                    )
+                                    these_counts = data[circuit_params]["counts"]
+                                    for bitstring, count in these_counts.items():
+                                        if bitstring in counts:
+                                            counts[bitstring] += count
+                                        else:
+                                            counts[bitstring] = count
+                                # raw quasis
+                                quasis_raw[permutation, label] = counts_to_quasis(counts)
+                                # measurement error mitigation
+                                quasis_mem[permutation, label] = mit.apply_correction(
+                                    counts,
+                                    params.qubits,
+                                    return_mitigation_overhead=True,
+                                )
+                                # post-selection
+                                new_quasis, removed_mass = post_select_quasis(
+                                    quasis_mem[permutation, label],
+                                    lambda bitstring: (-1)
+                                    ** sum(1 for b in bitstring if b == "1")
+                                    == exact_parity,  # pylint: disable=cell-var-from-loop
+                                )
+                                quasis_ps[permutation, label] = new_quasis
+                                ps_removed_mass[permutation, label] = removed_mass
+                        # save data
+                        quasi_dists[
                             tunneling,
                             superconducting,
                             chemical_potential,
                             occupied_orbitals,
-                            permutation,
-                            label,
-                            dynamical_decoupling_sequence=dd_sequence,
-                            pauli_twirl_index=0
-                            if params.num_twirled_circuits
-                            else None,
-                        )
-                        if circuit_params in data:
-                            counts = Counts({})
-                            for pauli_twirl_index in range(
-                                max(1, params.num_twirled_circuits)
-                            ):
-                                circuit_params = CircuitParameters(
-                                    tunneling,
-                                    superconducting,
-                                    chemical_potential,
-                                    occupied_orbitals,
-                                    permutation,
-                                    label,
-                                    dynamical_decoupling_sequence=dd_sequence,
-                                    pauli_twirl_index=pauli_twirl_index
-                                    if params.num_twirled_circuits
-                                    else None,
-                                )
-                                these_counts = data[circuit_params]["counts"]
-                                for bitstring, count in these_counts.items():
-                                    if bitstring in counts:
-                                        counts[bitstring] += count
-                                    else:
-                                        counts[bitstring] = count
-                            # raw quasis
-                            quasis_raw[permutation, label] = counts_to_quasis(counts)
-                            # measurement error mitigation
-                            quasis_mem[permutation, label] = mit.apply_correction(
-                                counts,
-                                params.qubits,
-                                return_mitigation_overhead=True,
-                            )
-                            # post-selection
-                            new_quasis, removed_mass = post_select_quasis(
-                                quasis_mem[permutation, label],
-                                lambda bitstring: (-1)
-                                ** sum(1 for b in bitstring if b == "1")
-                                == exact_parity,  # pylint: disable=cell-var-from-loop
-                            )
-                            quasis_ps[permutation, label] = new_quasis
-                            ps_removed_mass[permutation, label] = removed_mass
-                    # save data
-                    quasi_dists[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "raw",
-                    ] = quasis_raw
-                    quasi_dists[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "mem",
-                    ] = quasis_mem
-                    quasi_dists[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "ps",
-                    ] = quasis_ps
-                    ps_removed_masses[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                    ] = ps_removed_mass
-                    # compute correlation matrices
-                    corr_matrices[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "raw",
-                    ] = compute_correlation_matrix(quasis_raw)
-                    corr_matrices[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "mem",
-                    ] = compute_correlation_matrix(quasis_mem)
-                    corr_mat_ps, cov_ps = compute_correlation_matrix(quasis_ps)
-                    corr_matrices[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "ps",
-                    ] = (corr_mat_ps, cov_ps)
-                    corr_matrices[
-                        tunneling,
-                        superconducting,
-                        chemical_potential,
-                        occupied_orbitals,
-                        dd_sequence,
-                        "pur",
-                    ] = (purify_idempotent_matrix(corr_mat_ps), cov_ps)
+                            dd_sequence,
+                            max_repeat,
+                            "raw",
+                        ] = quasis_raw
+                        quasi_dists[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                            "mem",
+                        ] = quasis_mem
+                        quasi_dists[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                            "ps",
+                        ] = quasis_ps
+                        ps_removed_masses[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                        ] = ps_removed_mass
+                        # compute correlation matrices
+                        corr_matrices[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                            "raw",
+                        ] = compute_correlation_matrix(quasis_raw)
+                        corr_matrices[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                            "mem",
+                        ] = compute_correlation_matrix(quasis_mem)
+                        corr_mat_ps, cov_ps = compute_correlation_matrix(quasis_ps)
+                        corr_matrices[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                            "ps",
+                        ] = (corr_mat_ps, cov_ps)
+                        corr_matrices[
+                            tunneling,
+                            superconducting,
+                            chemical_potential,
+                            occupied_orbitals,
+                            dd_sequence,
+                            max_repeat,
+                            "pur",
+                        ] = (purify_idempotent_matrix(corr_mat_ps), cov_ps)
 
         yield from self._compute_fidelity_witness(
             ["raw", "mem", "ps", "pur"],
@@ -294,17 +308,19 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             params.chemical_potential_values,
             params.occupied_orbitals_list,
             dd_sequences,
+            max_repeats,
         )
-        yield from self._compute_energy(
-            ["raw", "mem", "ps", "pur"],
-            corr_matrices,
-            params.n_modes,
-            tunneling,
-            superconducting,
-            params.chemical_potential_values,
-            params.occupied_orbitals_list,
-            dd_sequences,
-        )
+        # yield from self._compute_energy(
+        #     ["raw", "mem", "ps", "pur"],
+        #     corr_matrices,
+        #     params.n_modes,
+        #     tunneling,
+        #     superconducting,
+        #     params.chemical_potential_values,
+        #     params.occupied_orbitals_list,
+        #     dd_sequences,
+        #     max_repeats,
+        # )
         # yield from self._compute_edge_correlation(
         #     ["raw", "mem", "ps", "pur"],
         #     corr_matrices,
@@ -515,12 +531,14 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         chemical_potential_values: Sequence[float],
         occupied_orbitals_list: Sequence[tuple[int, ...]],
         dynamical_decoupling_sequences: list[Optional[str]],
+        max_repeats: list[int],
     ) -> Iterable[AnalysisResultData]:
-        data: dict[
-            str,
-            dict[str, dict[tuple[int, ...], list[tuple[float, float]]]],
-        ] = {
-            dd_sequence: {label: defaultdict(list) for label in labels}
+        # data: dict[
+        #     str,
+        #     dict[str, dict[tuple[int, ...], list[tuple[float, float]]]],
+        # ] 
+        data = {
+            dd_sequence: {max_repeat: {label: defaultdict(list) for label in labels} for max_repeat in max_repeats}
             for dd_sequence in dynamical_decoupling_sequences
         }
         for chemical_potential in chemical_potential_values:
@@ -544,8 +562,8 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                     @ corr_diag
                     @ full_transformation_matrix
                 )
-                for dd_sequence, label in itertools.product(
-                    dynamical_decoupling_sequences, labels
+                for dd_sequence, max_repeat, label in itertools.product(
+                    dynamical_decoupling_sequences, max_repeats, labels
                 ):
                     corr_mat, cov = corr[
                         tunneling,
@@ -553,10 +571,11 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                         chemical_potential,
                         occupied_orbitals,
                         dd_sequence,
+                        max_repeat,
                         label,
                     ]
                     fidelity_wit, stddev = fidelity_witness(corr_mat, corr_exact, cov)
-                    data[dd_sequence][label][occupied_orbitals].append(
+                    data[dd_sequence][max_repeat][label][occupied_orbitals].append(
                         (fidelity_wit, stddev)
                     )
 
@@ -568,23 +587,23 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         }
         yield AnalysisResultData("fidelity_witness", data_zipped)
 
-        data_avg: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {
-            dd_sequence: {} for dd_sequence in dynamical_decoupling_sequences
+        data_avg = {
+            dd_sequence: {max_repeat: {} for max_repeat in max_repeats} for dd_sequence in dynamical_decoupling_sequences
         }
-        for dd_sequence, label in itertools.product(
-            dynamical_decoupling_sequences, labels
+        for dd_sequence, max_repeat, label in itertools.product(
+            dynamical_decoupling_sequences, max_repeats, labels
         ):
             fidelity_witness_avg = np.zeros(len(chemical_potential_values))
             fidelity_witness_stddev = np.zeros(len(chemical_potential_values))
             for occupied_orbitals in occupied_orbitals_list:
-                values, stddevs = data_zipped[dd_sequence][label][occupied_orbitals]
+                values, stddevs = data_zipped[dd_sequence][max_repeat][label][occupied_orbitals]
                 fidelity_witness_avg += np.array(values)
                 fidelity_witness_stddev += np.array(stddevs) ** 2
             fidelity_witness_avg /= len(occupied_orbitals_list)
             fidelity_witness_stddev = np.sqrt(fidelity_witness_stddev) / len(
                 occupied_orbitals_list
             )
-            data_avg[dd_sequence][label] = (
+            data_avg[dd_sequence][max_repeat][label] = (
                 fidelity_witness_avg,
                 fidelity_witness_stddev,
             )
@@ -605,13 +624,14 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         chemical_potential_values: Sequence[float],
         occupied_orbitals_list: Sequence[tuple[int, ...]],
         dynamical_decoupling_sequences: list[Optional[str]],
+        max_repeats: list[int]
     ) -> Iterable[AnalysisResultData]:
         energy_exact = defaultdict(list)  # dict[tuple[int, ...], list[float]]
         data: dict[
             str,
             dict[str, dict[tuple[int, ...], list[tuple[float, float]]]],
         ] = {
-            dd_sequence: {label: defaultdict(list) for label in labels}
+            dd_sequence: {max_repeat: {label: defaultdict(list) for label in labels} for max_repeat in max_repeats}
             for dd_sequence in dynamical_decoupling_sequences
         }
         for chemical_potential in chemical_potential_values:
@@ -635,8 +655,8 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                 )
                 energy_exact[occupied_orbitals].append(exact_energy)
 
-                for dd_sequence, label in itertools.product(
-                    dynamical_decoupling_sequences, labels
+                for dd_sequence, max_repeat, label in itertools.product(
+                    dynamical_decoupling_sequences, max_repeats, labels
                 ):
                     corr_mat, cov = corr[
                         tunneling,
@@ -644,6 +664,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                         chemical_potential,
                         occupied_orbitals,
                         dd_sequence,
+                        max_repeat,
                         label,
                     ]
                     energy, stddevs = np.real(
@@ -651,7 +672,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
                             hamiltonian_quad, corr_mat, cov
                         )
                     )
-                    data[dd_sequence][label][occupied_orbitals].append(
+                    data[dd_sequence][max_repeat][label][occupied_orbitals].append(
                         (energy, stddevs)
                     )
 
@@ -684,70 +705,70 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         yield AnalysisResultData("energy_error", data_error)
 
         # BdG
-        occupied_orbitals_set = set(occupied_orbitals_list)
-        combs = list(orbital_combinations(n_modes))
-        threshold = -1
-        for i in range(0, len(combs), 2):
-            if (
-                combs[i] not in occupied_orbitals_set
-                or combs[i + 1] not in occupied_orbitals_set
-            ):
-                break
-            threshold += 1
-        if threshold >= 0:
-            data_bdg: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {
-                dd_sequence: {} for dd_sequence in dynamical_decoupling_sequences
-            }
-            data_bdg_error: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {
-                dd_sequence: {} for dd_sequence in dynamical_decoupling_sequences
-            }
-            for dd_sequence, label in itertools.product(
-                dynamical_decoupling_sequences, labels
-            ):
-                bdg_energy = np.zeros((2 * threshold, len(chemical_potential_values)))
-                bdg_stddev = np.zeros((2 * threshold, len(chemical_potential_values)))
-                low, low_stddev = data_zipped[dd_sequence][label][()]
-                high, high_stddev = data_zipped[dd_sequence][label][
-                    tuple(range(n_modes))
-                ]
-                error = np.zeros(len(chemical_potential_values))
-                error_stddev = np.zeros(len(chemical_potential_values))
-                low_exact = energy_exact[()]
-                high_exact = energy_exact[tuple(range(n_modes))]
-                for i in range(threshold):
-                    # data
-                    particle, particle_stddev = data_zipped[dd_sequence][label][
-                        combs[2 * i + 2]
-                    ]
-                    hole, hole_stddev = data_zipped[dd_sequence][label][
-                        combs[2 * i + 3]
-                    ]
-                    # exact values
-                    particle_exact = np.array(energy_exact[combs[2 * i + 2]])
-                    hole_exact = np.array(energy_exact[combs[2 * i + 3]])
-                    # energy
-                    bdg_energy[i] = particle - low
-                    bdg_energy[threshold + i] = hole - high
-                    # stddev
-                    bdg_stddev[i] = low_stddev**2 + particle_stddev**2
-                    bdg_stddev[threshold + i] = high_stddev**2 + hole_stddev**2
-                    # error
-                    error += np.abs((particle - low) - (particle_exact - low_exact))
-                    error += np.abs((hole - high) - (hole_exact - high_exact))
-                    # error stddev
-                    error_stddev += (
-                        np.array(low_stddev) ** 2
-                        + np.array(particle_stddev) ** 2
-                        + np.array(high_stddev) ** 2
-                        + np.array(hole_stddev) ** 2
-                    )
-                bdg_stddev = np.sqrt(bdg_stddev)
-                error /= 2 * threshold
-                error_stddev = np.sqrt(error_stddev) / (2 * threshold)
-                data_bdg[dd_sequence][label] = bdg_energy, bdg_stddev
-                data_bdg_error[dd_sequence][label] = error, error_stddev
-            yield AnalysisResultData("bdg_energy", data_bdg)
-            yield AnalysisResultData("bdg_energy_error", data_bdg_error)
+        # occupied_orbitals_set = set(occupied_orbitals_list)
+        # combs = list(orbital_combinations(n_modes))
+        # threshold = -1
+        # for i in range(0, len(combs), 2):
+        #     if (
+        #         combs[i] not in occupied_orbitals_set
+        #         or combs[i + 1] not in occupied_orbitals_set
+        #     ):
+        #         break
+        #     threshold += 1
+        # if threshold >= 0:
+        #     data_bdg: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {
+        #         dd_sequence: {} for dd_sequence in dynamical_decoupling_sequences
+        #     }
+        #     data_bdg_error: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {
+        #         dd_sequence: {} for dd_sequence in dynamical_decoupling_sequences
+        #     }
+        #     for dd_sequence, label in itertools.product(
+        #         dynamical_decoupling_sequences, labels
+        #     ):
+        #         bdg_energy = np.zeros((2 * threshold, len(chemical_potential_values)))
+        #         bdg_stddev = np.zeros((2 * threshold, len(chemical_potential_values)))
+        #         low, low_stddev = data_zipped[dd_sequence][label][()]
+        #         high, high_stddev = data_zipped[dd_sequence][label][
+        #             tuple(range(n_modes))
+        #         ]
+        #         error = np.zeros(len(chemical_potential_values))
+        #         error_stddev = np.zeros(len(chemical_potential_values))
+        #         low_exact = energy_exact[()]
+        #         high_exact = energy_exact[tuple(range(n_modes))]
+        #         for i in range(threshold):
+        #             # data
+        #             particle, particle_stddev = data_zipped[dd_sequence][label][
+        #                 combs[2 * i + 2]
+        #             ]
+        #             hole, hole_stddev = data_zipped[dd_sequence][label][
+        #                 combs[2 * i + 3]
+        #             ]
+        #             # exact values
+        #             particle_exact = np.array(energy_exact[combs[2 * i + 2]])
+        #             hole_exact = np.array(energy_exact[combs[2 * i + 3]])
+        #             # energy
+        #             bdg_energy[i] = particle - low
+        #             bdg_energy[threshold + i] = hole - high
+        #             # stddev
+        #             bdg_stddev[i] = low_stddev**2 + particle_stddev**2
+        #             bdg_stddev[threshold + i] = high_stddev**2 + hole_stddev**2
+        #             # error
+        #             error += np.abs((particle - low) - (particle_exact - low_exact))
+        #             error += np.abs((hole - high) - (hole_exact - high_exact))
+        #             # error stddev
+        #             error_stddev += (
+        #                 np.array(low_stddev) ** 2
+        #                 + np.array(particle_stddev) ** 2
+        #                 + np.array(high_stddev) ** 2
+        #                 + np.array(hole_stddev) ** 2
+        #             )
+        #         bdg_stddev = np.sqrt(bdg_stddev)
+        #         error /= 2 * threshold
+        #         error_stddev = np.sqrt(error_stddev) / (2 * threshold)
+        #         data_bdg[dd_sequence][label] = bdg_energy, bdg_stddev
+        #         data_bdg_error[dd_sequence][label] = error, error_stddev
+        #     yield AnalysisResultData("bdg_energy", data_bdg)
+        #     yield AnalysisResultData("bdg_energy_error", data_bdg_error)
 
     def _compute_edge_correlation(
         self,
