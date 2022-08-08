@@ -13,6 +13,7 @@
 """Majorana zero modes generation experiment."""
 
 from __future__ import annotations
+from calendar import c
 
 import dataclasses
 import functools
@@ -22,7 +23,7 @@ from typing import Iterable, Optional, Union
 
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.circuit.library import XXPlusYYGate
+from qiskit.circuit.library import XXPlusYYGate, XGate, YGate
 from qiskit.providers import Provider
 from qiskit_experiments.framework import BaseExperiment
 from qiskit_nature.circuit.library import FermionicGaussianState
@@ -34,6 +35,7 @@ from qiskit_research.mzm_generation.utils import (
     transpile_circuit,
 )
 from qiskit_research.utils.convenience import add_periodic_dynamical_decoupling
+from qiskit_research.utils.convenience import add_concatenated_dynamical_decoupling
 
 # TODO make this a JSON serializable dataclass when Aer supports it
 # See https://github.com/Qiskit/qiskit-aer/issues/1435
@@ -196,9 +198,18 @@ class KitaevHamiltonianExperiment(BaseExperiment):
         return [add_periodic_dynamical_decoupling(
             circuit,
             self.backend,
+            [XGate(), YGate(), XGate(), YGate()],
             circuit.metadata["params"].dynamical_decoupling_sequence,
             max_repeats=circuit.metadata["params"].max_repeats,
+            add_pulse_cals=True
         ) for circuit in transpiled_circs]
+        # return [add_concatenated_dynamical_decoupling(
+        #     circuit,
+        #     self.backend,
+        #     dd_sequences=circuit.metadata["params"].dynamical_decoupling_sequence,
+        #     concatenates=circuit.metadata["params"].max_repeats,
+        #     add_pulse_cals=True,
+        # ) for circuit in transpiled_circs]
 
 
 

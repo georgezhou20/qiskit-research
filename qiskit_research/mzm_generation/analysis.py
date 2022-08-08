@@ -124,13 +124,13 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
         # create data storage objects
         corr_matrices: dict[
             tuple[
-                float, Union[float, complex], float, tuple[int, ...], Optional[str], str
+                float, Union[float, complex], float, tuple[int, ...], Optional[str], int, str
             ],
             tuple[np.ndarray, _CovarianceDict],
         ] = {}
         quasi_dists: dict[
             tuple[
-                float, Union[float, complex], float, tuple[int, ...], Optional[str], str
+                float, Union[float, complex], float, tuple[int, ...], Optional[str], int, str
             ],
             dict[tuple[tuple[int, ...], str], QuasiDistribution],
         ] = {}
@@ -138,7 +138,7 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
 
         # calculate results
         dd_sequences = params.dynamical_decoupling_sequences or [None]
-        max_repeats = params.max_repeats
+        max_repeats = list(range(1, 5))
         for chemical_potential in params.chemical_potential_values:
             # diagonalize
             (transformation_matrix, _, _,) = diagonalizing_bogoliubov_transform(
@@ -583,8 +583,9 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
             return {k: tuple(np.array(a) for a in zip(*v)) for k, v in d.items()}
 
         data_zipped = {
-            k1: {k2: zip_dict(v2) for k2, v2 in v1.items()} for k1, v1 in data.items()
+            k1: {k2: {k3: zip_dict(v3) for k3, v3 in v2.items()} for k2, v2 in v1.items()} for k1, v1 in data.items()
         }
+        
         yield AnalysisResultData("fidelity_witness", data_zipped)
 
         data_avg = {

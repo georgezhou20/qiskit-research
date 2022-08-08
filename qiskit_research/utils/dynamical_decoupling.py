@@ -32,6 +32,9 @@ from qiskit_research.utils.gates import XmGate, XpGate, YmGate, YpGate
 from qiskit_research.utils.custom_passes.periodic_dynamical_decoupling import (
     PeriodicDynamicalDecoupling,
 )
+from qiskit_research.utils.custom_passes.concatenated_dynamical_decoupling import (
+    ConcatenatedDynamicalDecoupling
+)
 
 X = XGate()
 Xp = XpGate()
@@ -73,7 +76,7 @@ def periodic_dynamical_decoupling(
     max_repeats: int = 1,
     scheduler: BaseScheduler = ALAPScheduleAnalysis,
 ) -> Iterable[BasePass]:
-    """Yields transpilation passes for periodic dynamical decoupling."""
+    """Yields padding passes for periodic dynamical decoupling."""
     durations = get_instruction_durations(backend)
     pulse_alignment = backend.configuration().timing_constraints["pulse_alignment"]
 
@@ -88,6 +91,29 @@ def periodic_dynamical_decoupling(
         avg_min_delay=avg_min_delay,
         max_repeats=max_repeats,
         pulse_alignment=pulse_alignment,
+    )
+
+def concatenated_dynamical_decoupling(
+    backend: Backend,
+    dd_sequences: Union[Optional[List[List[Gate]]], List[Gate]] = None,
+    avg_min_delay: int = None,
+    concatenates: int = 1,
+    scheduler: BaseScheduler = ALAPScheduleAnalysis,
+) -> Iterable[BasePass]:
+    """Yields padding passes for concatenated dynamical decoupling."""
+    durations = get_instruction_durations(backend)
+    pulse_alignment = backend.configuration().timing_constraints["pulse_alignment"]
+
+    if dd_sequences is None or type(dd_sequences[0]) is not list:
+        dd_sequences = [[XGate(), YGate(), XGate(), YGate()]]
+    dd_sequences *= concatenates
+
+    yield scheduler(durations)
+    yield ConcatenatedDynamicalDecoupling(
+        durations=durations,
+        dd_sequences=dd_sequences,
+        avg_min_delay=avg_min_delay,
+        pulse_alignment=pulse_alignment
     )
 
 

@@ -20,4 +20,11 @@ from qiskit_research.utils.custom_passes.periodic_dynamical_decoupling import (
     PeriodicDynamicalDecoupling,
 )
 
-__all__ = ["PeriodicDynamicalDecoupling"]
+from qiskit_research.utils.custom_passes.concatenated_dynamical_decoupling import (
+    ConcatenatedDynamicalDecoupling,
+)
+
+__all__ = [
+    "PeriodicDynamicalDecoupling",
+    "ConcatenatedDynamicalDecoupling",
+]
