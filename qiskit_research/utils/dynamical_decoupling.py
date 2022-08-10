@@ -18,7 +18,7 @@ from typing import Iterable, List, Union, Optional
 
 from qiskit import QuantumCircuit, pulse
 from qiskit.circuit import Gate
-from qiskit.circuit.library import XGate, YGate
+from qiskit.circuit.library import XGate, YGate, ZGate, IGate
 from qiskit.providers.backend import Backend
 from qiskit.pulse import DriveChannel
 from qiskit.qasm import pi
@@ -42,6 +42,8 @@ Xm = XmGate()
 Y = YGate()
 Yp = YpGate()
 Ym = YmGate()
+Z = ZGate()
+I = IGate()
 
 
 DD_SEQUENCE = {
@@ -222,3 +224,42 @@ def add_pulse_calibrations(
             for circ in circuits:
                 circ.add_calibration("ym", [qubit], sched)
 
+def generate_walsh_sequence(nx : int, ny : int, nz : int):
+    m = len(format(nx + ny + nz, 'b'))
+    nx = format(nx, f'0{m}b')
+    ny = format(ny, f'0{m}b')
+    nz = format(nz, f'0{m}b')
+    x_switchings = [False] * (2 ** m)
+    y_switchings = [False] * (2 ** m)
+    z_switchings = [False] * (2 ** m)
+    for i in range(m):
+        if nx[i] == '1':
+            for j in range(2 ** m - 1, -1, -(2 ** i)):
+                x_switchings[j] = not x_switchings[j]
+        elif ny[i] == '1':
+            for j in range(2 ** m - 1, -1, -(2 ** i)):
+                y_switchings[j] = not y_switchings[j]
+        elif nz[i] == '1':
+            for j in range(2 ** m - 1, -1, -(2 ** i)):
+                z_switchings[j] = not z_switchings[j]
+
+    dd_sequence = [I] * (2 ** m)
+    spacing = [1 / (2 ** m)]
+    for i in range(2 ** m):
+        switchings = (x_switchings[i], y_switchings[i], z_switchings[i])
+        if switchings == (True, True, False) or switchings == (False, False, True):
+            dd_sequence[i] = Z
+        elif switchings == (True, False, True) or switchings == (False, True, False):
+            dd_sequence[i] = Y
+        elif switchings == (False, True, True) or switchings == (True, False, False):
+            dd_sequence[i] = X
+        
+        if dd_sequence[i] == I:
+            spacing[-1] += 1 / (2 ** m)
+        else:
+            spacing.append(1 / (2 ** m))
+    if not (dd_sequence[-1] == I):
+        spacing[-1] = 0
+    while dd_sequence.count(I) > 0:
+        dd_sequence.remove(I)
+    return dd_sequence, spacing
