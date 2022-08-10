@@ -34,7 +34,7 @@ from qiskit_research.mzm_generation.utils import (
     measurement_labels,
     transpile_circuit,
 )
-from qiskit_research.utils.convenience import add_periodic_dynamical_decoupling
+from qiskit_research.utils.convenience import add_periodic_dynamical_decoupling, add_walsh_dynamical_decoupling
 from qiskit_research.utils.convenience import add_concatenated_dynamical_decoupling
 
 # TODO make this a JSON serializable dataclass when Aer supports it
@@ -195,14 +195,14 @@ class KitaevHamiltonianExperiment(BaseExperiment):
             )
             for circuit in self.circuits()
         ]
-        return [add_periodic_dynamical_decoupling(
-            circuit,
-            self.backend,
-            [XGate(), YGate(), XGate(), YGate()],
-            circuit.metadata["params"].dynamical_decoupling_sequence,
-            max_repeats=circuit.metadata["params"].max_repeats,
-            add_pulse_cals=True
-        ) for circuit in transpiled_circs]
+        # return [add_periodic_dynamical_decoupling(
+        #     circuit,
+        #     self.backend,
+        #     [XGate(), YGate(), XGate(), YGate()],
+        #     circuit.metadata["params"].dynamical_decoupling_sequence,
+        #     max_repeats=circuit.metadata["params"].max_repeats,
+        #     add_pulse_cals=True
+        # ) for circuit in transpiled_circs]
         # return [add_concatenated_dynamical_decoupling(
         #     circuit,
         #     self.backend,
@@ -210,6 +210,12 @@ class KitaevHamiltonianExperiment(BaseExperiment):
         #     concatenates=circuit.metadata["params"].max_repeats,
         #     add_pulse_cals=True,
         # ) for circuit in transpiled_circs]
+        return [add_walsh_dynamical_decoupling(
+            circuit,
+            self.backend,
+            circuit.metadata['params'].max_repeats,
+            add_pulse_cals=True
+        ) for circuit in transpiled_circs]
 
 
 

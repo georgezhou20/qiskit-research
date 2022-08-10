@@ -18,7 +18,7 @@ from typing import Iterable, List, Union, Optional
 
 from qiskit import QuantumCircuit, pulse
 from qiskit.circuit import Gate
-from qiskit.circuit.library import XGate, YGate
+from qiskit.circuit.library import XGate, YGate, ZGate, IGate
 from qiskit.providers.backend import Backend
 from qiskit.pulse import DriveChannel
 from qiskit.qasm import pi
@@ -32,9 +32,6 @@ from qiskit_research.utils.gates import XmGate, XpGate, YmGate, YpGate
 from qiskit_research.utils.custom_passes.periodic_dynamical_decoupling import (
     PeriodicDynamicalDecoupling,
 )
-from qiskit_research.utils.custom_passes.concatenated_dynamical_decoupling import (
-    ConcatenatedDynamicalDecoupling
-)
 
 X = XGate()
 Xp = XpGate()
@@ -42,6 +39,8 @@ Xm = XmGate()
 Y = YGate()
 Yp = YpGate()
 Ym = YmGate()
+Z = ZGate()
+I = IGate()
 
 
 DD_SEQUENCE = {
@@ -76,7 +75,7 @@ def periodic_dynamical_decoupling(
     max_repeats: int = 1,
     scheduler: BaseScheduler = ALAPScheduleAnalysis,
 ) -> Iterable[BasePass]:
-    """Yields padding passes for periodic dynamical decoupling."""
+    """Yields transpilation passes for periodic dynamical decoupling."""
     durations = get_instruction_durations(backend)
     pulse_alignment = backend.configuration().timing_constraints["pulse_alignment"]
 
@@ -93,28 +92,20 @@ def periodic_dynamical_decoupling(
         pulse_alignment=pulse_alignment,
     )
 
-def concatenated_dynamical_decoupling(
+def walsh_dynamical_decoupling(
     backend: Backend,
-    dd_sequences: Union[Optional[List[List[Gate]]], List[Gate]] = None,
-    avg_min_delay: int = None,
-    concatenates: int = 1,
+    nx: int,
+    ny: int, 
+    nz: int,
     scheduler: BaseScheduler = ALAPScheduleAnalysis,
 ) -> Iterable[BasePass]:
-    """Yields padding passes for concatenated dynamical decoupling."""
+
     durations = get_instruction_durations(backend)
     pulse_alignment = backend.configuration().timing_constraints["pulse_alignment"]
-
-    if dd_sequences is None or type(dd_sequences[0]) is not list:
-        dd_sequences = [[XGate(), YGate(), XGate(), YGate()]]
-    dd_sequences *= concatenates
+    sequence, spacing = generate_walsh_sequence(nx, ny, nz)
 
     yield scheduler(durations)
-    yield ConcatenatedDynamicalDecoupling(
-        durations=durations,
-        dd_sequences=dd_sequences,
-        avg_min_delay=avg_min_delay,
-        pulse_alignment=pulse_alignment
-    )
+    yield PadDynamicalDecoupling(durations, sequence, spacing=spacing, pulse_alignment=pulse_alignment)
 
 
 # TODO this should take instruction schedule map instead of backend
@@ -221,3 +212,43 @@ def add_pulse_calibrations(
             # add calibrations to circuits
             for circ in circuits:
                 circ.add_calibration("ym", [qubit], sched)
+
+def generate_walsh_sequence(nx : int, ny : int, nz : int):
+    m = len(format(nx + ny + nz, 'b'))
+    nx = format(nx, f'0{m}b')
+    ny = format(ny, f'0{m}b')
+    nz = format(nz, f'0{m}b')
+    x_switchings = [False] * (2 ** m)
+    y_switchings = [False] * (2 ** m)
+    z_switchings = [False] * (2 ** m)
+    for i in range(m):
+        if nx[i] == '1':
+            for j in range(2 ** m - 1, -1, -(2 ** i)):
+                x_switchings[j] = not x_switchings[j]
+        elif ny[i] == '1':
+            for j in range(2 ** m - 1, -1, -(2 ** i)):
+                y_switchings[j] = not y_switchings[j]
+        elif nz[i] == '1':
+            for j in range(2 ** m - 1, -1, -(2 ** i)):
+                z_switchings[j] = not z_switchings[j]
+
+    dd_sequence = [I] * (2 ** m)
+    spacing = [1 / (2 ** m)]
+    for i in range(2 ** m):
+        switchings = (x_switchings[i], y_switchings[i], z_switchings[i])
+        if switchings == (True, True, False) or switchings == (False, False, True):
+            dd_sequence[i] = Z
+        elif switchings == (True, False, True) or switchings == (False, True, False):
+            dd_sequence[i] = Y
+        elif switchings == (False, True, True) or switchings == (True, False, False):
+            dd_sequence[i] = X
+        
+        if dd_sequence[i] == I:
+            spacing[-1] += 1 / (2 ** m)
+        else:
+            spacing.append(1 / (2 ** m))
+    if not (dd_sequence[-1] == I):
+        spacing[-1] = 0
+    while dd_sequence.count(I) > 0:
+        dd_sequence.remove(I)
+    return dd_sequence, spacing
