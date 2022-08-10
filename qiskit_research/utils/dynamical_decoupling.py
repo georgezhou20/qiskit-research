@@ -118,6 +118,20 @@ def concatenated_dynamical_decoupling(
         pulse_alignment=pulse_alignment
     )
 
+def walsh_dynamical_decoupling(
+    backend: Backend,
+    nx: int,
+    ny: int, 
+    nz: int,
+    scheduler: BaseScheduler = ALAPScheduleAnalysis,
+) -> Iterable[BasePass]:
+
+    durations = get_instruction_durations(backend)
+    pulse_alignment = backend.configuration().timing_constraints["pulse_alignment"]
+    sequence, spacing = generate_walsh_sequence(nx, ny, nz)
+
+    yield scheduler(durations)
+    yield PadDynamicalDecoupling(durations, sequence, spacing=spacing, pulse_alignment=pulse_alignment)
 
 # TODO this should take instruction schedule map instead of backend
 def get_instruction_durations(backend: Backend) -> InstructionDurations:
@@ -260,6 +274,8 @@ def generate_walsh_sequence(nx : int, ny : int, nz : int):
             spacing.append(1 / (2 ** m))
     if not (dd_sequence[-1] == I):
         spacing[-1] = 0
+    else: 
+        spacing[-1] -= 1 / (2 ** m)
     while dd_sequence.count(I) > 0:
         dd_sequence.remove(I)
     return dd_sequence, spacing

@@ -213,7 +213,9 @@ class KitaevHamiltonianExperiment(BaseExperiment):
         return [add_walsh_dynamical_decoupling(
             circuit,
             self.backend,
-            circuit.metadata['params'].max_repeats,
+            nx=circuit.metadata['params'].max_repeats,
+            ny=0,
+            nz=0,
             add_pulse_cals=True
         ) for circuit in transpiled_circs]
 
