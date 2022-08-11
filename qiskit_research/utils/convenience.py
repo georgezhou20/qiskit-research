@@ -31,7 +31,10 @@ from qiskit_research.utils import (
     pulse_attaching_passes,
     add_pulse_calibrations,
 )
-from qiskit_research.utils.dynamical_decoupling import periodic_dynamical_decoupling
+from qiskit_research.utils.dynamical_decoupling import (
+    periodic_dynamical_decoupling,
+    concatenated_dynamical_decoupling,
+)
 
 
 def add_dynamical_decoupling(
@@ -88,6 +91,44 @@ def add_periodic_dynamical_decoupling(
                 base_spacing=base_spacing,
                 avg_min_delay=avg_min_delay,
                 max_repeats=max_repeats,
+                scheduler=scheduler,
+            )
+        )
+    )
+    if isinstance(circuits, QuantumCircuit) or isinstance(circuits[0], QuantumCircuit):
+        circuits_dd = pass_manager.run(circuits)
+        if add_pulse_cals:
+            add_pulse_calibrations(circuits_dd, backend)
+    else:
+        circuits_dd = [pass_manager.run(circs) for circs in circuits]
+        if add_pulse_cals:
+            for circs_dd in circuits_dd:
+                add_pulse_calibrations(circs_dd, backend)
+
+    return circuits_dd
+
+def add_concatenated_dynamical_decoupling(
+    circuits: Union[QuantumCircuit, List[QuantumCircuit], List[List[QuantumCircuit]]],
+    backend: Backend,
+    dd_sequences: Union[List[List[Gate]], List[Gate]] = None,
+    avg_min_delay: int = None,
+    concatenates: int = 1,
+    scheduler: BaseScheduler = ALAPScheduleAnalysis,
+    add_pulse_cals: bool = False,
+) -> Union[QuantumCircuit, List[QuantumCircuit], List[List[QuantumCircuit]]]:
+    """Add concatenated dynamical decoupling sequences and calibrations to circuits.
+
+    Adds concatenated dynamical decoupling sequences and the calibrations necessary
+    to run them on an IBM backend.
+    """
+
+    pass_manager = PassManager(
+        list(
+            concatenated_dynamical_decoupling(
+                backend=backend,
+                dd_sequences=dd_sequences,
+                avg_min_delay=avg_min_delay,
+                concatenates=concatenates,
                 scheduler=scheduler,
             )
         )

@@ -19,6 +19,8 @@ Utilities for running research experiments with Qiskit
 from qiskit_research.utils.dynamical_decoupling import (
     add_pulse_calibrations,
     dynamical_decoupling_passes,
+    periodic_dynamical_decoupling,
+    concatenated_dynamical_decoupling,
 )
 from qiskit_research.utils.gate_decompositions import (
     RZXtoEchoedCR,
@@ -43,6 +45,8 @@ from qiskit_research.utils.periodic_dynamical_decoupling import (
 __all__ = [
     "add_pulse_calibrations",
     "dynamical_decoupling_passes",
+    "periodic_dynamical_decoupling",
+    "concatenated_dynamical_decoupling",
     "RZXtoEchoedCR",
     "XXMinusYYtoRZX",
     "XXPlusYYtoRZX",
