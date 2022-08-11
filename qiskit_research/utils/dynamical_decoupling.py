@@ -14,13 +14,11 @@
 
 import numpy as np
 
-from __future__ import annotations
-
 from typing import Iterable, List, Union, Optional
 
 from qiskit import QuantumCircuit, pulse
 from qiskit.circuit import Gate
-from qiskit.circuit.library import XGate, YGate, RZGate, IGate
+from qiskit.circuit.library import XGate, YGate, ZGate, IGate
 from qiskit.providers.backend import Backend
 from qiskit.pulse import DriveChannel
 from qiskit.qasm import pi
@@ -41,7 +39,7 @@ Xm = XmGate()
 Y = YGate()
 Yp = YpGate()
 Ym = YmGate()
-Z = RZGate(np.pi)
+Z = ZGate()
 I = IGate()
 
 
@@ -135,7 +133,7 @@ def get_instruction_durations(backend: Backend) -> InstructionDurations:
 
             # create DD pulses from CR echo 'x' pulse
             if inst_str == "x":
-                for new_gate in ["xp", "xm", "y", "yp", "ym"]:
+                for new_gate in ["xp", "xm", "y", "yp", "ym", "z"]:
                     inst_durs.append((new_gate, qubit, inst.duration))
 
     # two qubit gates
@@ -214,6 +212,15 @@ def add_pulse_calibrations(
             # add calibrations to circuits
             for circ in circuits:
                 circ.add_calibration("ym", [qubit], sched)
+        
+        with pulse.build(f"z gate for qubit {qubit}") as sched:
+            # def of ZGate() in terms of RzGate()
+            z_sched = inst_sched_map.get("rz", qubits=[qubit], params=np.pi)
+            pulse.call(z_sched)
+
+            # add calibrations to circuits
+            for circ in circuits:
+                circ.add_calibration("z", [qubit], sched)
 
 def generate_walsh_sequence(nx : int, ny : int, nz : int):
     """Generates gate sequences and spacings for corresponding Walsh function.
