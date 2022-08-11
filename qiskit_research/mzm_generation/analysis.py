@@ -138,7 +138,8 @@ class KitaevHamiltonianAnalysis(BaseAnalysis):
 
         # calculate results
         dd_sequences = params.dynamical_decoupling_sequences or [None]
-        max_repeats = list(range(1, 11))
+        # max_repeats = list(range(1, 11))
+        max_repeats = params.max_repeats
         for chemical_potential in params.chemical_potential_values:
             # diagonalize
             (transformation_matrix, _, _,) = diagonalizing_bogoliubov_transform(
