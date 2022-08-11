@@ -31,7 +31,7 @@ from qiskit_research.utils import (
     pulse_attaching_passes,
     add_pulse_calibrations,
 )
-from qiskit_research.utils.dynamical_decoupling import periodic_dynamical_decoupling
+from qiskit_research.utils.dynamical_decoupling import periodic_dynamical_decoupling, walsh_dynamical_decoupling
 
 
 def add_dynamical_decoupling(
@@ -103,6 +103,43 @@ def add_periodic_dynamical_decoupling(
                 add_pulse_calibrations(circs_dd, backend)
 
     return circuits_dd
+
+def add_walsh_dynamical_decoupling(
+    circuits: Union[QuantumCircuit, List[QuantumCircuit], List[List[QuantumCircuit]]],
+    backend: Backend,
+    nx: int,
+    ny: int,
+    nz: int,
+    scheduler: BaseScheduler = ALAPScheduleAnalysis,
+    add_pulse_cals: bool = False,
+) -> Union[QuantumCircuit, List[QuantumCircuit], List[List[QuantumCircuit]]]:
+    """
+    Insert dynamical decoupling sequences based on Walsh functions described
+    here: https://arxiv.org/pdf/1702.05533.pdf 
+    """
+    pass_manager = PassManager(
+        list(
+            walsh_dynamical_decoupling(
+                backend,
+                nx,
+                ny,
+                nz,
+                scheduler=scheduler,
+            )
+        )
+    )
+    if isinstance(circuits, QuantumCircuit) or isinstance(circuits[0], QuantumCircuit):
+        circuits_dd = pass_manager.run(circuits)
+        if add_pulse_cals:
+            add_pulse_calibrations(circuits_dd, backend)
+    else:
+        circuits_dd = [pass_manager.run(circs) for circs in circuits]
+        if add_pulse_cals:
+            for circs_dd in circuits_dd:
+                add_pulse_calibrations(circs_dd, backend)
+
+    return circuits_dd
+
 
 
 def add_pauli_twirls(

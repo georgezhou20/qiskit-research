@@ -12,13 +12,15 @@
 
 """Dynamical decoupling."""
 
+import numpy as np
+
 from __future__ import annotations
 
 from typing import Iterable, List, Union, Optional
 
 from qiskit import QuantumCircuit, pulse
 from qiskit.circuit import Gate
-from qiskit.circuit.library import XGate, YGate, ZGate, IGate
+from qiskit.circuit.library import XGate, YGate, RZGate, IGate
 from qiskit.providers.backend import Backend
 from qiskit.pulse import DriveChannel
 from qiskit.qasm import pi
@@ -39,7 +41,7 @@ Xm = XmGate()
 Y = YGate()
 Yp = YpGate()
 Ym = YmGate()
-Z = ZGate()
+Z = RZGate(np.pi)
 I = IGate()
 
 
@@ -99,7 +101,7 @@ def walsh_dynamical_decoupling(
     nz: int,
     scheduler: BaseScheduler = ALAPScheduleAnalysis,
 ) -> Iterable[BasePass]:
-
+    """Yields transpilation passes for walsh dynamical decoupling."""
     durations = get_instruction_durations(backend)
     pulse_alignment = backend.configuration().timing_constraints["pulse_alignment"]
     sequence, spacing = generate_walsh_sequence(nx, ny, nz)
@@ -214,6 +216,14 @@ def add_pulse_calibrations(
                 circ.add_calibration("ym", [qubit], sched)
 
 def generate_walsh_sequence(nx : int, ny : int, nz : int):
+    """Generates gate sequences and spacings for corresponding Walsh function.
+    Walsh functions are products of the Rademacher functions, which are a set of
+    orthonormal functions R_n: [0, 1] -> {-1, 1}. We assign a Walsh function to
+    each of the x, y, and z axes depending on nx, ny, and nz. The times where each
+    Walsh function switches from -1 to 1 (or 1 to -1) determines whether or not to apply
+    an x, y, or z gate. If multiple gates are to be applied at the same time, we use the fact
+    that XY = Z, YX = X, etc ignoring global phase. 
+    """
     m = len(format(nx + ny + nz, 'b'))
     nx = format(nx, f'0{m}b')
     ny = format(ny, f'0{m}b')
@@ -247,7 +257,9 @@ def generate_walsh_sequence(nx : int, ny : int, nz : int):
             spacing[-1] += 1 / (2 ** m)
         else:
             spacing.append(1 / (2 ** m))
-    if not (dd_sequence[-1] == I):
+    if dd_sequence[-1] == I:
+        spacing[-1] -= 1 / (2 ** m)
+    else:
         spacing[-1] = 0
     while dd_sequence.count(I) > 0:
         dd_sequence.remove(I)
